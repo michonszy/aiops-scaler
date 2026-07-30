@@ -1,0 +1,89 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: grafana-cloud-credentials
+  namespace: aiops
+type: Opaque
+stringData:
+  GRAFANA_INSTANCE_ID: "xxx"
+  GRAFANA_ACCESS_TOKEN: "xxx="
+  PROMETHEUS_URL: "https://prometheus-prod-xx-prod-eu-west-2.grafana.net/api/prom"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiops-predictor
+  namespace: aiops
+  labels:
+    app: aiops
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aiops
+  template:
+    metadata:
+      labels:
+        app: aiops
+      annotations:
+        k8s.grafana.com/scrape: "true"
+        k8s.grafana.com/metrics.portNumber: "8000" 
+        k8s.grafana.com/metrics.path: "/metrics"
+    spec:
+      containers:
+      - name: predictor
+        image: michonszy/predictor:0.0.23
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+          name: metrics
+        env:
+        - name: PROMETHEUS_URL
+          valueFrom:
+            secretKeyRef:
+              name: grafana-cloud-credentials
+              key: PROMETHEUS_URL
+        - name: GRAFANA_INSTANCE_ID
+          valueFrom:
+            secretKeyRef:
+              name: grafana-cloud-credentials
+              key: GRAFANA_INSTANCE_ID
+        - name: GRAFANA_ACCESS_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: grafana-cloud-credentials
+              key: GRAFANA_ACCESS_TOKEN
+        - name: LOOP_INTERVAL_SECONDS
+          value: "60"
+        - name: HPA_REFRESH_LOOPS
+          value: "150"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aiops-service
+  namespace: aiops
+  labels:
+    app: aiops
+  annotations:
+    k8s.grafana.com/scrape: "true"
+    k8s.grafana.com/metrics.portNumber: "8000"
+    k8s.grafana.com/metrics.path: "/metrics"
+spec:
+  selector:
+    app: aiops
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+      name: metrics
